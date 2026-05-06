@@ -1,5 +1,4 @@
 const express = require('express');
-const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const morgan = require('morgan');
 
@@ -15,21 +14,34 @@ const app = express();
 
 app.set('trust proxy', 1);
 
-app.use(cors({
-  origin: (origin, cb) => {
-    const allowed = (process.env.CLIENT_URL || 'http://localhost:5173')
-      .split(',').map(s => s.trim()).filter(Boolean);
-    if (!origin || allowed.includes(origin)) {
-      cb(null, true);
-    } else {
-      console.warn(`[CORS] Blocked origin: ${origin}. Allowed: ${allowed.join(', ')}`);
-      cb(null, false);
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
-}));
+// Hand-rolled CORS — guarantees OPTIONS always returns 204, no edge cases.
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+  const allowed = (process.env.CLIENT_URL || 'http://localhost:5173')
+    .split(',').map(s => s.trim()).filter(Boolean);
+  if (allowed.includes(origin)) return true;
+  if (/^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin)) return true;
+  return false;
+};
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && isAllowedOrigin(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Vary', 'Origin');
+  }
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,PATCH,OPTIONS');
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      req.headers['access-control-request-headers'] || 'Content-Type,Authorization,Cookie'
+    );
+    res.setHeader('Access-Control-Max-Age', '86400');
+    return res.status(204).end();
+  }
+  next();
+});
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
