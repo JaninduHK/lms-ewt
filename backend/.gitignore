@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Env files — all variants ignored
+.env
+.env.*
+!.env.example
+
+# Seeders — contain default credentials
+utils/seed.js
+utils/seeds/
+seeders/
+
+# User uploads — preserved on the server
+uploads/slips/*
+uploads/materials/*
+uploads/thumbnails/*
+!uploads/**/.gitkeep
+
+# Logs
+*.log

@@ -1,0 +1,55 @@
+stages:
+  - build
+  - deploy
+
+variables:
+  NODE_VERSION: "20"
+
+# Build the frontend bundle so the deploy stage can rsync it to the VPS.
+build_frontend:
+  stage: build
+  image: node:20-alpine
+  cache:
+    key: $CI_COMMIT_REF_SLUG-frontend
+    paths:
+      - frontend/node_modules/
+  script:
+    - cd frontend
+    - npm ci
+    - npm run build
+  artifacts:
+    paths:
+      - frontend/dist/
+    expire_in: 1 day
+  only:
+    - main
+
+# rsync source + built frontend to the VPS, install backend deps, restart PM2.
+deploy_production:
+  stage: deploy
+  image: alpine:3.19
+  needs:
+    - build_frontend
+  before_script:
+    - apk add --no-cache openssh-client rsync
+    - eval $(ssh-agent -s)
+    - echo "$DEPLOY_SSH_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - echo "$DEPLOY_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
+  script:
+    # Sync backend source (preserve uploads + .env on the server).
+    - rsync -az --delete
+        --exclude='node_modules' --exclude='.env'
+        --exclude='uploads/slips/*' --exclude='uploads/materials/*' --exclude='uploads/thumbnails/*'
+        backend/ $DEPLOY_USER@$DEPLOY_HOST:/var/www/ewt/backend/
+    # Sync built frontend.
+    - rsync -az --delete frontend/dist/ $DEPLOY_USER@$DEPLOY_HOST:/var/www/ewt/frontend/dist/
+    # Sync PM2 config.
+    - rsync -az ecosystem.config.js $DEPLOY_USER@$DEPLOY_HOST:/var/www/ewt/
+    # Install backend prod deps & reload PM2.
+    - ssh $DEPLOY_USER@$DEPLOY_HOST "cd /var/www/ewt/backend && npm ci --omit=dev && cd /var/www/ewt && pm2 reload ecosystem.config.js --update-env && pm2 save"
+  environment:
+    name: production
+    url: https://$DEPLOY_HOST
+  only:
+    - main

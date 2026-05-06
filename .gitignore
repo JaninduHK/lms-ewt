@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Env files — all variants ignored, only the template tracked
+.env
+.env.*
+!.env.example
+
+# Seeders — contain default credentials, kept local-only
+backend/utils/seed.js
+backend/utils/seeds/
+backend/seeders/
+
+# Build output
+dist/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# User-uploaded files (preserved on the server, not in git)
+backend/uploads/slips/*
+backend/uploads/materials/*
+backend/uploads/thumbnails/*
+!backend/uploads/**/.gitkeep
