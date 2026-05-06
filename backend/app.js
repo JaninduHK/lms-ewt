@@ -18,11 +18,17 @@ app.set('trust proxy', 1);
 app.use(cors({
   origin: (origin, cb) => {
     const allowed = (process.env.CLIENT_URL || 'http://localhost:5173')
-      .split(',').map(s => s.trim());
-    if (!origin || allowed.includes(origin)) cb(null, true);
-    else cb(new Error('Not allowed by CORS'));
+      .split(',').map(s => s.trim()).filter(Boolean);
+    if (!origin || allowed.includes(origin)) {
+      cb(null, true);
+    } else {
+      console.warn(`[CORS] Blocked origin: ${origin}. Allowed: ${allowed.join(', ')}`);
+      cb(null, false);
+    }
   },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
 }));
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
