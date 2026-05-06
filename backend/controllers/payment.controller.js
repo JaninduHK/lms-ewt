@@ -6,15 +6,16 @@ const { generateHash, verifyNotifyHash } = require('../utils/payhere');
 
 const submitBankTransfer = async (req, res, next) => {
   try {
-    const { classId, month, year } = req.body;
-    if (!req.file) return res.status(400).json({ message: 'Slip file required' });
+    const { classId, month, year, slipUrl } = req.body;
+    if (!slipUrl || !/^https:\/\/res\.cloudinary\.com\//.test(slipUrl)) {
+      return res.status(400).json({ message: 'Valid slip upload required' });
+    }
     const cls = await Class.findById(classId);
     if (!cls) return res.status(404).json({ message: 'Class not found' });
 
     const enrolled = await Enrollment.findOne({ studentId: req.user._id, classId });
     if (!enrolled) return res.status(403).json({ message: 'Enroll in the class first' });
 
-    const slipUrl = `/uploads/slips/${req.file.filename}`;
     const data = {
       studentId: req.user._id,
       classId,

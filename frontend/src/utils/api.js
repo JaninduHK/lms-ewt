@@ -1,7 +1,11 @@
 import axios from 'axios';
 
+// In dev: VITE_API_URL is unset → `/api` is proxied to the backend by Vite.
+// In prod: set VITE_API_URL to e.g. https://ewt-api.vercel.app/api
+const baseURL = import.meta.env.VITE_API_URL || '/api';
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL,
   withCredentials: true,
 });
 

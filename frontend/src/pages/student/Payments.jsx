@@ -2,9 +2,10 @@ import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
-import { CreditCard, Upload, MessageCircle, Building2, Hash, ReceiptText } from 'lucide-react';
+import { CreditCard, Upload, MessageCircle, Building2, Hash, ReceiptText, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../utils/api';
+import { uploadToCloudinary } from '../../utils/cloudinary';
 import PageHeader from '../../components/ui/PageHeader';
 import Modal from '../../components/ui/Modal';
 import Skeleton from '../../components/ui/Skeleton';
@@ -25,6 +26,7 @@ export default function Payments() {
   const [year, setYear] = useState(preYear);
   const [method, setMethod] = useState('bank_transfer');
   const [slipFile, setSlipFile] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const { data: payData, isLoading } = useQuery({
     queryKey: ['my-payments'],
@@ -48,25 +50,27 @@ export default function Payments() {
   const submitBank = useMutation({
     mutationFn: async () => {
       if (!slipFile) throw new Error('Please upload your payment slip');
-      const fd = new FormData();
-      fd.append('classId', classId);
-      fd.append('slip', slipFile);
-      if (selectedClass?.type === 'subscription') {
-        fd.append('month', month);
-        fd.append('year', year);
-      }
-      const { data } = await api.post('/payments/bank-transfer', fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      setUploadProgress(0);
+      const upload = await uploadToCloudinary(slipFile, 'slips', setUploadProgress);
+      const body = {
+        classId,
+        slipUrl: upload.url,
+        ...(selectedClass?.type === 'subscription' ? { month, year } : {}),
+      };
+      const { data } = await api.post('/payments/bank-transfer', body);
       return data;
     },
     onSuccess: () => {
       toast.success('Payment submitted! Your teacher will verify within 24 hours.');
       setSubmitOpen(false);
       setSlipFile(null);
+      setUploadProgress(0);
       qc.invalidateQueries({ queryKey: ['my-payments'] });
     },
-    onError: (e) => toast.error(e.response?.data?.message || e.message),
+    onError: (e) => {
+      setUploadProgress(0);
+      toast.error(e.response?.data?.message || e.message);
+    },
   });
 
   const initPayHere = useMutation({
@@ -255,6 +259,14 @@ export default function Payments() {
                   className="block mx-auto text-sm"
                 />
                 {slipFile && <p className="mt-2 text-sm text-emerald-700">Selected: {slipFile.name}</p>}
+                {submitBank.isPending && uploadProgress > 0 && uploadProgress < 100 && (
+                  <div className="mt-3">
+                    <div className="h-2 rounded-full bg-midnight-100 overflow-hidden">
+                      <div className="h-full bg-gold-500 transition-all" style={{ width: `${uploadProgress}%` }} />
+                    </div>
+                    <p className="text-xs text-midnight-500 mt-1">Uploading… {uploadProgress}%</p>
+                  </div>
+                )}
               </div>
             </div>
           )}

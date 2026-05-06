@@ -1,14 +1,19 @@
 const mongoose = require('mongoose');
 
+// Cache the connection across serverless invocations to avoid
+// creating a new connection on every request.
+let cached = global.__mongoose;
+if (!cached) cached = global.__mongoose = { conn: null, promise: null };
+
 const connectDB = async () => {
-  try {
-    const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/econ-lms';
-    await mongoose.connect(uri);
-    console.log('MongoDB connected');
-  } catch (err) {
-    console.error('MongoDB connection failed:', err.message);
-    process.exit(1);
+  if (cached.conn) return cached.conn;
+  if (!cached.promise) {
+    const uri = process.env.MONGODB_URI;
+    if (!uri) throw new Error('MONGODB_URI is not set');
+    cached.promise = mongoose.connect(uri, { bufferCommands: false }).then(m => m);
   }
+  cached.conn = await cached.promise;
+  return cached.conn;
 };
 
 module.exports = connectDB;

@@ -163,15 +163,17 @@ const reorderVideos = async (req, res, next) => {
 
 const addMaterial = async (req, res, next) => {
   try {
-    if (!req.file) return res.status(400).json({ message: 'File required' });
+    const { title, fileUrl, fileType, fileSize } = req.body;
+    if (!fileUrl || !/^https:\/\/res\.cloudinary\.com\//.test(fileUrl)) {
+      return res.status(400).json({ message: 'Valid file upload required' });
+    }
     const cls = await Class.findById(req.params.id);
     if (!cls) return res.status(404).json({ message: 'Class not found' });
-    const fileUrl = `/uploads/materials/${req.file.filename}`;
     cls.materials.push({
-      title: req.body.title || req.file.originalname,
+      title: title || 'Material',
       fileUrl,
-      fileType: req.file.mimetype,
-      fileSize: req.file.size,
+      fileType: fileType || '',
+      fileSize: fileSize || 0,
     });
     await cls.save();
     res.status(201).json({ class: cls });

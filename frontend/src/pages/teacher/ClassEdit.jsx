@@ -12,6 +12,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import api from '../../utils/api';
+import { uploadToCloudinary } from '../../utils/cloudinary';
 import Skeleton from '../../components/ui/Skeleton';
 import { formatLKR, monthName } from '../../utils/format';
 
@@ -86,8 +87,13 @@ export default function ClassEdit() {
   });
 
   const addMaterial = useMutation({
-    mutationFn: (fd) => api.post(`/classes/${id}/materials`, fd, { headers: { 'Content-Type': 'multipart/form-data' } }),
-    onSuccess: () => { toast.success('Material uploaded'); qc.invalidateQueries({ queryKey: ['t-class', id] }); },
+    mutationFn: (body) => api.post(`/classes/${id}/materials`, body),
+    onSuccess: () => {
+      toast.success('Material uploaded');
+      qc.invalidateQueries({ queryKey: ['t-class', id] });
+      qc.invalidateQueries({ queryKey: ['t-classes'] });
+    },
+    onError: (e) => toast.error(e.response?.data?.message || 'Upload failed'),
   });
   const delMaterial = useMutation({
     mutationFn: (mid) => api.delete(`/classes/${id}/materials/${mid}`),
@@ -273,14 +279,27 @@ function MaterialsTab({ fullCls, onAdd, onDel }) {
   const fullDoc = list?.classes.find(c => c._id === fullCls._id) || {};
   const [file, setFile] = useState(null);
   const [title, setTitle] = useState('');
+  const [progress, setProgress] = useState(0);
+  const [uploading, setUploading] = useState(false);
 
-  const handleUpload = () => {
+  const handleUpload = async () => {
     if (!file) return;
-    const fd = new FormData();
-    fd.append('file', file);
-    if (title) fd.append('title', title);
-    onAdd(fd);
-    setFile(null); setTitle('');
+    try {
+      setUploading(true);
+      setProgress(0);
+      const upload = await uploadToCloudinary(file, 'materials', setProgress);
+      onAdd({
+        title: title || upload.originalFilename || file.name,
+        fileUrl: upload.url,
+        fileType: file.type,
+        fileSize: upload.bytes,
+      });
+      setFile(null); setTitle(''); setProgress(0);
+    } catch (e) {
+      toast.error(e.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
@@ -290,8 +309,16 @@ function MaterialsTab({ fullCls, onAdd, onDel }) {
         <div className="space-y-3">
           <input className="input" placeholder="Title (optional)" value={title} onChange={e => setTitle(e.target.value)} />
           <input type="file" onChange={e => setFile(e.target.files?.[0])} className="block w-full text-sm" />
-          <button onClick={handleUpload} disabled={!file} className="btn-gold">
-            <Upload size={16} /> Upload
+          {uploading && (
+            <div>
+              <div className="h-2 rounded-full bg-midnight-100 overflow-hidden">
+                <div className="h-full bg-gold-500 transition-all" style={{ width: `${progress}%` }} />
+              </div>
+              <p className="text-xs text-midnight-500 mt-1">Uploading… {progress}%</p>
+            </div>
+          )}
+          <button onClick={handleUpload} disabled={!file || uploading} className="btn-gold">
+            <Upload size={16} /> {uploading ? 'Uploading…' : 'Upload'}
           </button>
         </div>
       </div>
