@@ -20,18 +20,26 @@ const submitBankTransfer = async (req, res, next) => {
       studentId: req.user._id,
       classId,
       paymentType: 'bank_transfer',
-      amount: cls.price,
       currency: cls.currency,
       slipUrl,
       slipUploadedAt: new Date(),
       status: 'pending',
     };
+
     if (cls.type === 'subscription') {
-      const m = parseInt(month) || (new Date().getMonth() + 1);
-      const y = parseInt(year) || new Date().getFullYear();
+      const m = parseInt(month);
+      const y = parseInt(year);
+      if (!m || !y) return res.status(400).json({ message: 'month and year required for subscription' });
+      const monthDoc = (cls.months || []).find(x => x.month === m && x.year === y);
+      if (!monthDoc) return res.status(404).json({ message: 'Month not found' });
+      if (!monthDoc.isPublished) return res.status(400).json({ message: 'Month is not available for purchase' });
       data.month = m;
       data.year = y;
+      data.amount = monthDoc.price;
+    } else {
+      data.amount = cls.price;
     }
+
     const payment = await Payment.create(data);
     res.status(201).json({ payment });
   } catch (err) { next(err); }
@@ -46,26 +54,40 @@ const initPayHere = async (req, res, next) => {
     const enrolled = await Enrollment.findOne({ studentId: req.user._id, classId });
     if (!enrolled) return res.status(403).json({ message: 'Enroll in the class first' });
 
-    const orderId = `EC-${Date.now()}-${req.user.studentId || req.user._id.toString().slice(-6)}`;
+    let amount;
+    let itemTitle = cls.title;
     const data = {
       studentId: req.user._id,
       classId,
       paymentType: 'payhere',
-      amount: cls.price,
       currency: cls.currency,
-      payhereOrderId: orderId,
       status: 'pending',
     };
     if (cls.type === 'subscription') {
-      data.month = parseInt(month) || (new Date().getMonth() + 1);
-      data.year = parseInt(year) || new Date().getFullYear();
+      const m = parseInt(month);
+      const y = parseInt(year);
+      if (!m || !y) return res.status(400).json({ message: 'month and year required for subscription' });
+      const monthDoc = (cls.months || []).find(x => x.month === m && x.year === y);
+      if (!monthDoc) return res.status(404).json({ message: 'Month not found' });
+      if (!monthDoc.isPublished) return res.status(400).json({ message: 'Month is not available for purchase' });
+      data.month = m;
+      data.year = y;
+      data.amount = monthDoc.price;
+      amount = monthDoc.price;
+      itemTitle = `${cls.title} — ${m}/${y}`;
+    } else {
+      data.amount = cls.price;
+      amount = cls.price;
     }
+
+    const orderId = `EC-${Date.now()}-${req.user.studentId || req.user._id.toString().slice(-6)}`;
+    data.payhereOrderId = orderId;
     const payment = await Payment.create(data);
 
     const merchantId = process.env.PAYHERE_MERCHANT_ID || '';
     const secret = process.env.PAYHERE_MERCHANT_SECRET || '';
     const hash = secret ? generateHash({
-      merchantId, orderId, amount: cls.price, currency: cls.currency, secret,
+      merchantId, orderId, amount, currency: cls.currency, secret,
     }) : null;
 
     res.json({
@@ -77,8 +99,8 @@ const initPayHere = async (req, res, next) => {
         cancel_url: process.env.PAYHERE_CANCEL_URL,
         notify_url: process.env.PAYHERE_NOTIFY_URL,
         order_id: orderId,
-        items: cls.title,
-        amount: Number(cls.price).toFixed(2),
+        items: itemTitle,
+        amount: Number(amount).toFixed(2),
         currency: cls.currency,
         first_name: req.user.firstName,
         last_name: req.user.lastName,

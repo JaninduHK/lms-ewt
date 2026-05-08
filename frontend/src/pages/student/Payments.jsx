@@ -1,8 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
-import { CreditCard, Upload, MessageCircle, Building2, Hash, ReceiptText, Loader2 } from 'lucide-react';
+import { CreditCard, Upload, MessageCircle, Building2, Hash, ReceiptText } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../utils/api';
 import { uploadToCloudinary } from '../../utils/cloudinary';
@@ -46,6 +46,38 @@ export default function Payments() {
     () => enrolledClasses.find(c => c._id === classId),
     [enrolledClasses, classId]
   );
+
+  // For subscription classes: fetch detail to get months[] with hasAccess/paymentStatus per month.
+  const { data: classDetail } = useQuery({
+    queryKey: ['class', classId],
+    queryFn: async () => (await api.get(`/classes/${classId}`)).data,
+    enabled: !!classId && selectedClass?.type === 'subscription',
+  });
+  const monthsAvailable = useMemo(() => {
+    if (!classDetail?.class?.months) return [];
+    // Show only months that are published and not already paid
+    return classDetail.class.months.filter(m => m.isPublished && !m.hasAccess);
+  }, [classDetail]);
+
+  // Auto-select first available month if user changes class
+  useEffect(() => {
+    if (selectedClass?.type !== 'subscription') return;
+    if (!monthsAvailable.length) return;
+    const matched = monthsAvailable.find(m => m.month === month && m.year === year);
+    if (!matched) {
+      setMonth(monthsAvailable[0].month);
+      setYear(monthsAvailable[0].year);
+    }
+  }, [classId, monthsAvailable, selectedClass?.type, month, year]);
+
+  const selectedMonth = useMemo(() => {
+    if (selectedClass?.type !== 'subscription') return null;
+    return classDetail?.class?.months?.find(m => m.month === month && m.year === year) || null;
+  }, [classDetail, month, year, selectedClass?.type]);
+
+  const dueAmount = selectedClass?.type === 'subscription'
+    ? (selectedMonth?.price ?? 0)
+    : (selectedClass?.price ?? 0);
 
   const submitBank = useMutation({
     mutationFn: async () => {
@@ -177,17 +209,28 @@ export default function Payments() {
           </div>
 
           {selectedClass?.type === 'subscription' && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="label">Month</label>
-                <select className="input" value={month} onChange={(e) => setMonth(parseInt(e.target.value))}>
-                  {[...Array(12)].map((_, i) => <option key={i+1} value={i+1}>{monthName(i+1)}</option>)}
+            <div>
+              <label className="label">Month</label>
+              {monthsAvailable.length === 0 ? (
+                <p className="text-sm text-midnight-500 italic">
+                  No purchasable months available for this class right now.
+                </p>
+              ) : (
+                <select
+                  className="input"
+                  value={`${year}-${month}`}
+                  onChange={(e) => {
+                    const [y, m] = e.target.value.split('-').map(Number);
+                    setYear(y); setMonth(m);
+                  }}
+                >
+                  {monthsAvailable.map(m => (
+                    <option key={`${m.year}-${m.month}`} value={`${m.year}-${m.month}`}>
+                      {monthName(m.month)} {m.year} — {formatLKR(m.price)}
+                    </option>
+                  ))}
                 </select>
-              </div>
-              <div>
-                <label className="label">Year</label>
-                <input type="number" className="input" value={year} onChange={(e) => setYear(parseInt(e.target.value))} />
-              </div>
+              )}
             </div>
           )}
 
@@ -225,7 +268,10 @@ export default function Payments() {
                 <div><p className="text-midnight-300 text-xs">Account Number</p><p className="font-mono">{bd.accountNumber || '—'}</p></div>
                 <div className="col-span-2 p-3 rounded-lg bg-midnight-800">
                   <p className="text-midnight-300 text-xs">Amount to transfer</p>
-                  <p className="font-serif text-2xl font-bold text-gold-400">{formatLKR(selectedClass?.price, selectedClass?.currency)}</p>
+                  <p className="font-serif text-2xl font-bold text-gold-400">{formatLKR(dueAmount, selectedClass?.currency)}</p>
+                  {selectedMonth && (
+                    <p className="text-xs text-midnight-300 mt-1">{monthName(selectedMonth.month)} {selectedMonth.year}</p>
+                  )}
                 </div>
                 <div className="col-span-2 flex items-center gap-2 p-3 rounded-lg bg-midnight-800">
                   <Hash size={16} className="text-gold-400" />
@@ -276,7 +322,8 @@ export default function Payments() {
             {method === 'bank_transfer' ? (
               <button
                 onClick={() => submitBank.mutate()}
-                disabled={!classId || !slipFile || submitBank.isPending}
+                disabled={!classId || !slipFile || submitBank.isPending
+                  || (selectedClass?.type === 'subscription' && !selectedMonth)}
                 className="btn-gold"
               >
                 <Upload size={16} /> {submitBank.isPending ? 'Submitting…' : 'Submit Payment'}
@@ -284,7 +331,8 @@ export default function Payments() {
             ) : (
               <button
                 onClick={() => initPayHere.mutate()}
-                disabled={!classId || initPayHere.isPending}
+                disabled={!classId || initPayHere.isPending
+                  || (selectedClass?.type === 'subscription' && !selectedMonth)}
                 className="btn-gold"
               >
                 <ReceiptText size={16} /> {initPayHere.isPending ? 'Redirecting…' : 'Pay with PayHere'}

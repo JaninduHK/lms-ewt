@@ -1,66 +1,31 @@
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Save, Plus, Trash2, Video, FileText, Calendar, Users, Settings as SettingsIcon, GripVertical, Upload } from 'lucide-react';
+import {
+  ArrowLeft, Save, Plus, Trash2, Video, FileText, Calendar, Users,
+  Settings as SettingsIcon, Layers, ArrowRight, Eye, EyeOff,
+} from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
-import {
-  DndContext, closestCenter, PointerSensor, useSensor, useSensors,
-} from '@dnd-kit/core';
-import {
-  SortableContext, useSortable, verticalListSortingStrategy, arrayMove,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import api from '../../utils/api';
-import { uploadToCloudinary } from '../../utils/cloudinary';
 import Skeleton from '../../components/ui/Skeleton';
+import Modal from '../../components/ui/Modal';
 import { formatLKR, monthName } from '../../utils/format';
-
-const TABS = [
-  { id: 'details', label: 'Details', icon: SettingsIcon },
-  { id: 'videos', label: 'Videos', icon: Video },
-  { id: 'materials', label: 'Materials', icon: FileText },
-  { id: 'zoom', label: 'Zoom Links', icon: Calendar },
-  { id: 'students', label: 'Students', icon: Users },
-];
-
-function SortableVideoItem({ video, onRemove }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: video._id });
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.6 : 1,
-  };
-  return (
-    <div ref={setNodeRef} style={style} className="flex items-center gap-3 p-3 rounded-lg border border-midnight-100 bg-white">
-      <button {...attributes} {...listeners} className="cursor-grab text-midnight-400 hover:text-midnight-700">
-        <GripVertical size={18} />
-      </button>
-      <div className="w-12 h-8 rounded bg-midnight-900 flex items-center justify-center text-gold-400 shrink-0">
-        <Video size={14} />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="font-medium text-midnight-900 truncate">{video.title}</p>
-        <p className="text-xs text-midnight-500">{video.platform.toUpperCase()} · {video.embedId}</p>
-      </div>
-      <button onClick={onRemove} className="text-rose-600 hover:bg-rose-50 p-2 rounded-lg">
-        <Trash2 size={16} />
-      </button>
-    </div>
-  );
-}
+import VideosEditor from '../../components/teacher/VideosEditor';
+import MaterialsEditor from '../../components/teacher/MaterialsEditor';
+import ZoomEditor from '../../components/teacher/ZoomEditor';
 
 export default function ClassEdit() {
   const { id } = useParams();
   const qc = useQueryClient();
   const [tab, setTab] = useState('details');
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
-
-  const { data, isLoading } = useQuery({
-    queryKey: ['t-class', id],
-    queryFn: async () => (await api.get(`/classes/${id}`)).data,
+  // The list endpoint returns full nested docs (including months) for teachers.
+  const { data: list } = useQuery({
+    queryKey: ['t-classes'],
+    queryFn: async () => (await api.get('/classes')).data,
   });
+  const cls = list?.classes.find(c => c._id === id);
   const { data: enr } = useQuery({
     queryKey: ['t-class-enrollments', id],
     queryFn: async () => (await api.get(`/enrollments/class/${id}`)).data,
@@ -69,52 +34,60 @@ export default function ClassEdit() {
 
   const update = useMutation({
     mutationFn: (patch) => api.put(`/classes/${id}`, patch),
-    onSuccess: () => { toast.success('Saved'); qc.invalidateQueries({ queryKey: ['t-class', id] }); },
+    onSuccess: () => { toast.success('Saved'); qc.invalidateQueries({ queryKey: ['t-classes'] }); },
   });
 
+  // Onetime root content mutations
   const addVideo = useMutation({
     mutationFn: (body) => api.post(`/classes/${id}/videos`, body),
-    onSuccess: () => { toast.success('Video added'); qc.invalidateQueries({ queryKey: ['t-class', id] }); },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['t-classes'] }),
     onError: (e) => toast.error(e.response?.data?.message || 'Failed'),
   });
   const delVideo = useMutation({
     mutationFn: (vid) => api.delete(`/classes/${id}/videos/${vid}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['t-class', id] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['t-classes'] }),
   });
-  const reorder = useMutation({
+  const reorderVideos = useMutation({
     mutationFn: (order) => api.put(`/classes/${id}/videos/reorder`, { order }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['t-class', id] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['t-classes'] }),
   });
-
   const addMaterial = useMutation({
     mutationFn: (body) => api.post(`/classes/${id}/materials`, body),
-    onSuccess: () => {
-      toast.success('Material uploaded');
-      qc.invalidateQueries({ queryKey: ['t-class', id] });
-      qc.invalidateQueries({ queryKey: ['t-classes'] });
-    },
+    onSuccess: () => { toast.success('Material uploaded'); qc.invalidateQueries({ queryKey: ['t-classes'] }); },
     onError: (e) => toast.error(e.response?.data?.message || 'Upload failed'),
   });
   const delMaterial = useMutation({
     mutationFn: (mid) => api.delete(`/classes/${id}/materials/${mid}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['t-class', id] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['t-classes'] }),
   });
-
   const addZoom = useMutation({
     mutationFn: (body) => api.post(`/classes/${id}/zoom`, body),
-    onSuccess: () => { toast.success('Session added'); qc.invalidateQueries({ queryKey: ['t-class', id] }); },
+    onSuccess: () => { toast.success('Session added'); qc.invalidateQueries({ queryKey: ['t-classes'] }); },
   });
   const delZoom = useMutation({
     mutationFn: (zid) => api.delete(`/classes/${id}/zoom/${zid}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['t-class', id] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['t-classes'] }),
   });
 
-  if (isLoading) return <Skeleton className="h-96" />;
+  if (!list) return <Skeleton className="h-96" />;
+  if (!cls) return <div className="card p-8 text-center">Class not found.</div>;
 
-  // For teacher endpoint, we need full class. The /classes/:id detail returns trimmed public version.
-  // Re-fetch as teacher: use /classes (list) as fallback or call via cls editor — but for editing we need full doc.
-  // We'll request the full list and find by id.
-  const cls = data?.class;
+  const isSubscription = cls.type === 'subscription';
+
+  const TABS = isSubscription
+    ? [
+        { id: 'details', label: 'Details', icon: SettingsIcon },
+        { id: 'months', label: 'Months', icon: Layers },
+        { id: 'students', label: 'Students', icon: Users },
+      ]
+    : [
+        { id: 'details', label: 'Details', icon: SettingsIcon },
+        { id: 'videos', label: 'Videos', icon: Video },
+        { id: 'materials', label: 'Materials', icon: FileText },
+        { id: 'zoom', label: 'Zoom Links', icon: Calendar },
+        { id: 'students', label: 'Students', icon: Users },
+      ];
+
   return (
     <div className="space-y-6">
       <Link to="/teacher/classes" className="inline-flex items-center gap-2 text-midnight-600 hover:text-midnight-900">
@@ -122,14 +95,15 @@ export default function ClassEdit() {
       </Link>
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
-          <h1 className="font-serif text-3xl font-bold text-midnight-900">{cls?.title}</h1>
+          <h1 className="font-serif text-3xl font-bold text-midnight-900">{cls.title}</h1>
           <p className="text-midnight-500 mt-1 capitalize">
-            {cls?.type} · {formatLKR(cls?.price, cls?.currency)} · {cls?.isPublished ? 'Published' : 'Draft'}
+            {cls.type === 'subscription' ? 'Monthly Subscription' : 'One-Time'}
+            {cls.type === 'onetime' && ` · ${formatLKR(cls.price, cls.currency)}`}
+            {' · '}{cls.isPublished ? 'Published' : 'Draft'}
           </p>
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="border-b border-midnight-200 flex gap-1 overflow-x-auto">
         {TABS.map(t => (
           <button
@@ -145,22 +119,34 @@ export default function ClassEdit() {
       </div>
 
       {tab === 'details' && <DetailsTab cls={cls} onSave={update.mutate} saving={update.isPending} />}
-      {tab === 'videos' && (
-        <VideosTab
-          videos={cls?.videoCount ? null : null}
-          fullCls={cls}
-          onAdd={(b) => addVideo.mutate(b)}
-          onDel={(vid) => delVideo.mutate(vid)}
-          onReorder={(order) => reorder.mutate(order)}
-          sensors={sensors}
+
+      {tab === 'months' && isSubscription && <MonthsTab cls={cls} />}
+
+      {tab === 'videos' && !isSubscription && (
+        <VideosEditor
+          videos={cls.videos || []}
+          onAdd={(p) => addVideo.mutateAsync(p)}
+          onRemove={(vid) => delVideo.mutateAsync(vid)}
+          onReorder={(order) => reorderVideos.mutateAsync(order)}
         />
       )}
-      {tab === 'materials' && (
-        <MaterialsTab fullCls={cls} onAdd={(fd) => addMaterial.mutate(fd)} onDel={(mid) => delMaterial.mutate(mid)} />
+
+      {tab === 'materials' && !isSubscription && (
+        <MaterialsEditor
+          materials={cls.materials || []}
+          onAdd={(p) => addMaterial.mutateAsync(p)}
+          onRemove={(mid) => delMaterial.mutateAsync(mid)}
+        />
       )}
-      {tab === 'zoom' && (
-        <ZoomTab fullCls={cls} onAdd={(b) => addZoom.mutate(b)} onDel={(zid) => delZoom.mutate(zid)} />
+
+      {tab === 'zoom' && !isSubscription && (
+        <ZoomEditor
+          zoomLinks={cls.zoomLinks || []}
+          onAdd={(p) => addZoom.mutateAsync(p)}
+          onRemove={(zid) => delZoom.mutateAsync(zid)}
+        />
       )}
+
       {tab === 'students' && <StudentsTab enrollments={enr?.enrollments || []} />}
     </div>
   );
@@ -169,8 +155,9 @@ export default function ClassEdit() {
 function DetailsTab({ cls, onSave, saving }) {
   const [form, setForm] = useState({
     title: cls.title, description: cls.description, thumbnail: cls.thumbnail,
-    type: cls.type, price: cls.price, currency: cls.currency, isPublished: cls.isPublished,
+    price: cls.price, currency: cls.currency, isPublished: cls.isPublished,
   });
+  const isSubscription = cls.type === 'subscription';
   return (
     <div className="card p-6 space-y-4 max-w-3xl">
       <div>
@@ -185,17 +172,13 @@ function DetailsTab({ cls, onSave, saving }) {
         <label className="label">Thumbnail URL</label>
         <input className="input" value={form.thumbnail} onChange={e => setForm({...form, thumbnail: e.target.value})} />
       </div>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="label">Type</label>
-          <select className="input" value={form.type} onChange={e => setForm({...form, type: e.target.value})}>
-            <option value="subscription">Subscription</option>
-            <option value="onetime">One-Time</option>
-          </select>
-        </div>
-        <div>
-          <label className="label">Price</label>
+          <label className="label">{isSubscription ? 'Default month price' : 'Price'}</label>
           <input type="number" className="input" value={form.price} onChange={e => setForm({...form, price: e.target.value})} />
+          {isSubscription && (
+            <p className="text-xs text-midnight-500 mt-1">Used as the default for newly created months. Each month can override it.</p>
+          )}
         </div>
         <div>
           <label className="label">Currency</label>
@@ -213,193 +196,224 @@ function DetailsTab({ cls, onSave, saving }) {
   );
 }
 
-function VideosTab({ fullCls, onAdd, onDel, onReorder, sensors }) {
-  // Note: The detail endpoint for teachers actually returns trimmed view.
-  // We re-fetch full doc by listing teacher classes and extracting. For simplicity below we use videos prop fed by parent re-fetch via list. Workaround: parent uses /classes list which DOES include full nested docs.
-  // For this UI, we'll fetch the list and find this class.
-  const { data: list } = useQuery({
-    queryKey: ['t-classes'],
-    queryFn: async () => (await api.get('/classes')).data,
-  });
-  const fullDoc = list?.classes.find(c => c._id === fullCls._id) || {};
-  const [title, setTitle] = useState('');
-  const [url, setUrl] = useState('');
-  const videos = fullDoc.videos || [];
+function MonthsTab({ cls }) {
+  const qc = useQueryClient();
+  const [openAdd, setOpenAdd] = useState(false);
+  const [openBulk, setOpenBulk] = useState(false);
 
-  const handleDragEnd = (e) => {
-    const { active, over } = e;
-    if (!over || active.id === over.id) return;
-    const ids = videos.map(v => v._id);
-    const oldIdx = ids.indexOf(active.id);
-    const newIdx = ids.indexOf(over.id);
-    const newOrder = arrayMove(ids, oldIdx, newIdx);
-    onReorder(newOrder);
-  };
+  const months = [...(cls.months || [])].sort((a, b) => (a.year - b.year) || (a.month - b.month));
+
+  const addMonth = useMutation({
+    mutationFn: (body) => api.post(`/classes/${cls._id}/months`, body),
+    onSuccess: () => { toast.success('Month added'); qc.invalidateQueries({ queryKey: ['t-classes'] }); setOpenAdd(false); },
+    onError: (e) => toast.error(e.response?.data?.message || 'Failed'),
+  });
+  const bulk = useMutation({
+    mutationFn: (body) => api.post(`/classes/${cls._id}/months/bulk`, body),
+    onSuccess: ({ data }) => { toast.success(`${data.added} months created`); qc.invalidateQueries({ queryKey: ['t-classes'] }); setOpenBulk(false); },
+    onError: (e) => toast.error(e.response?.data?.message || 'Failed'),
+  });
+  const togglePub = useMutation({
+    mutationFn: ({ year, month, isPublished }) =>
+      api.put(`/classes/${cls._id}/months/${year}/${month}`, { isPublished }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['t-classes'] }),
+  });
+  const updPrice = useMutation({
+    mutationFn: ({ year, month, price }) =>
+      api.put(`/classes/${cls._id}/months/${year}/${month}`, { price }),
+    onSuccess: () => { toast.success('Price updated'); qc.invalidateQueries({ queryKey: ['t-classes'] }); },
+  });
+  const remove = useMutation({
+    mutationFn: ({ year, month }) => api.delete(`/classes/${cls._id}/months/${year}/${month}`),
+    onSuccess: () => { toast.success('Month deleted'); qc.invalidateQueries({ queryKey: ['t-classes'] }); },
+    onError: (e) => toast.error(e.response?.data?.message || 'Failed'),
+  });
 
   return (
-    <div className="space-y-4 max-w-3xl">
-      <div className="card p-5">
-        <h3 className="font-serif text-lg font-bold text-midnight-900 mb-3">Add Video</h3>
-        <div className="grid sm:grid-cols-3 gap-3">
-          <input className="input sm:col-span-1" placeholder="Title" value={title} onChange={e => setTitle(e.target.value)} />
-          <input className="input sm:col-span-2" placeholder="YouTube or Vimeo URL" value={url} onChange={e => setUrl(e.target.value)} />
-        </div>
-        <button
-          onClick={() => { onAdd({ title, url }); setTitle(''); setUrl(''); }}
-          disabled={!title || !url}
-          className="btn-gold mt-3"
-        ><Plus size={16} /> Add</button>
+    <div className="space-y-4 max-w-4xl">
+      <div className="flex flex-wrap gap-2">
+        <button onClick={() => setOpenAdd(true)} className="btn-gold"><Plus size={16}/> Add Month</button>
+        <button onClick={() => setOpenBulk(true)} className="btn-outline"><Layers size={16}/> Pre-create Year</button>
       </div>
 
-      <div className="card p-5">
-        <h3 className="font-serif text-lg font-bold text-midnight-900 mb-3">Videos ({videos.length})</h3>
-        {videos.length === 0 ? (
-          <p className="text-midnight-500 text-sm text-center py-6">No videos yet.</p>
-        ) : (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={videos.map(v => v._id)} strategy={verticalListSortingStrategy}>
-              <div className="space-y-2">
-                {videos.map(v => (
-                  <SortableVideoItem key={v._id} video={v} onRemove={() => onDel(v._id)} />
-                ))}
-              </div>
-            </SortableContext>
-          </DndContext>
-        )}
-      </div>
+      {months.length === 0 ? (
+        <div className="card p-10 text-center text-midnight-500">
+          No months yet. Use "Pre-create Year" to add Jan–Dec for a year, or add months individually.
+        </div>
+      ) : (
+        <div className="card overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-midnight-50 text-midnight-700">
+              <tr>
+                <th className="text-left p-3">Month</th>
+                <th className="text-left p-3">Price</th>
+                <th className="text-left p-3">Content</th>
+                <th className="text-left p-3">Status</th>
+                <th className="text-left p-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {months.map(m => (
+                <MonthRow
+                  key={`${m.year}-${m.month}`}
+                  classId={cls._id}
+                  m={m}
+                  onTogglePublish={() => togglePub.mutate({ year: m.year, month: m.month, isPublished: !m.isPublished })}
+                  onSavePrice={(p) => updPrice.mutate({ year: m.year, month: m.month, price: p })}
+                  onRemove={() => {
+                    if (confirm(`Delete ${monthName(m.month)} ${m.year}? Months with paid students cannot be deleted.`)) {
+                      remove.mutate({ year: m.year, month: m.month });
+                    }
+                  }}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <AddMonthModal
+        open={openAdd}
+        onClose={() => setOpenAdd(false)}
+        defaultPrice={cls.price}
+        existing={months}
+        onSave={(payload) => addMonth.mutate(payload)}
+        saving={addMonth.isPending}
+      />
+      <BulkYearModal
+        open={openBulk}
+        onClose={() => setOpenBulk(false)}
+        defaultPrice={cls.price}
+        onSave={(payload) => bulk.mutate(payload)}
+        saving={bulk.isPending}
+      />
     </div>
   );
 }
 
-function MaterialsTab({ fullCls, onAdd, onDel }) {
-  const { data: list } = useQuery({
-    queryKey: ['t-classes'],
-    queryFn: async () => (await api.get('/classes')).data,
-  });
-  const fullDoc = list?.classes.find(c => c._id === fullCls._id) || {};
-  const [file, setFile] = useState(null);
-  const [title, setTitle] = useState('');
-  const [progress, setProgress] = useState(0);
-  const [uploading, setUploading] = useState(false);
-
-  const handleUpload = async () => {
-    if (!file) return;
-    try {
-      setUploading(true);
-      setProgress(0);
-      const upload = await uploadToCloudinary(file, 'materials', setProgress);
-      onAdd({
-        title: title || upload.originalFilename || file.name,
-        fileUrl: upload.url,
-        fileType: file.type,
-        fileSize: upload.bytes,
-      });
-      setFile(null); setTitle(''); setProgress(0);
-    } catch (e) {
-      toast.error(e.message || 'Upload failed');
-    } finally {
-      setUploading(false);
-    }
-  };
-
+function MonthRow({ classId, m, onTogglePublish, onSavePrice, onRemove }) {
+  const [editing, setEditing] = useState(false);
+  const [price, setPrice] = useState(m.price);
+  const total = (m.videoCount ?? m.videos?.length ?? 0)
+    + (m.materialCount ?? m.materials?.length ?? 0)
+    + (m.zoomCount ?? m.zoomLinks?.length ?? 0);
   return (
-    <div className="space-y-4 max-w-3xl">
-      <div className="card p-5">
-        <h3 className="font-serif text-lg font-bold text-midnight-900 mb-3">Upload Material</h3>
-        <div className="space-y-3">
-          <input className="input" placeholder="Title (optional)" value={title} onChange={e => setTitle(e.target.value)} />
-          <input type="file" onChange={e => setFile(e.target.files?.[0])} className="block w-full text-sm" />
-          {uploading && (
-            <div>
-              <div className="h-2 rounded-full bg-midnight-100 overflow-hidden">
-                <div className="h-full bg-gold-500 transition-all" style={{ width: `${progress}%` }} />
-              </div>
-              <p className="text-xs text-midnight-500 mt-1">Uploading… {progress}%</p>
-            </div>
-          )}
-          <button onClick={handleUpload} disabled={!file || uploading} className="btn-gold">
-            <Upload size={16} /> {uploading ? 'Uploading…' : 'Upload'}
+    <tr className="border-t border-midnight-100">
+      <td className="p-3 font-medium text-midnight-900">
+        <p>{monthName(m.month)} {m.year}</p>
+      </td>
+      <td className="p-3">
+        {editing ? (
+          <div className="flex gap-1">
+            <input type="number" value={price} onChange={e => setPrice(e.target.value)} className="input w-28 py-1" />
+            <button onClick={() => { onSavePrice(Number(price)); setEditing(false); }} className="btn-success py-1 px-2 text-xs">Save</button>
+            <button onClick={() => { setPrice(m.price); setEditing(false); }} className="btn-outline py-1 px-2 text-xs">Cancel</button>
+          </div>
+        ) : (
+          <button onClick={() => setEditing(true)} className="text-left hover:underline">
+            {formatLKR(m.price)}
+          </button>
+        )}
+      </td>
+      <td className="p-3 text-xs text-midnight-600">
+        <span title="videos">{m.videoCount ?? m.videos?.length ?? 0} videos</span>
+        {' · '}
+        <span title="materials">{m.materialCount ?? m.materials?.length ?? 0} files</span>
+        {' · '}
+        <span title="zoom">{m.zoomCount ?? m.zoomLinks?.length ?? 0} zoom</span>
+        {total === 0 && <span className="text-amber-600 ml-2">(empty)</span>}
+      </td>
+      <td className="p-3">
+        <button onClick={onTogglePublish} className={m.isPublished ? 'badge-emerald' : 'badge-amber'}>
+          {m.isPublished ? <><Eye size={12} className="inline mr-1"/>Published</> : <><EyeOff size={12} className="inline mr-1"/>Draft</>}
+        </button>
+      </td>
+      <td className="p-3">
+        <div className="flex gap-1">
+          <Link
+            to={`/teacher/classes/${classId}/months/${m.year}/${m.month}/edit`}
+            className="btn-primary py-1 px-2 text-xs"
+          >
+            Edit content <ArrowRight size={12}/>
+          </Link>
+          <button onClick={onRemove} className="btn-danger py-1 px-2 text-xs"><Trash2 size={12}/></button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function AddMonthModal({ open, onClose, defaultPrice, existing, onSave, saving }) {
+  const now = new Date();
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(now.getFullYear());
+  const [price, setPrice] = useState(defaultPrice);
+  const exists = existing.some(m => m.month === Number(month) && m.year === Number(year));
+  return (
+    <Modal open={open} onClose={onClose} title="Add Month">
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">Month</label>
+            <select className="input" value={month} onChange={e => setMonth(Number(e.target.value))}>
+              {[...Array(12)].map((_, i) => <option key={i+1} value={i+1}>{monthName(i+1)}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label">Year</label>
+            <input type="number" className="input" value={year} onChange={e => setYear(Number(e.target.value))} />
+          </div>
+        </div>
+        <div>
+          <label className="label">Price (LKR)</label>
+          <input type="number" className="input" value={price} onChange={e => setPrice(e.target.value)} />
+        </div>
+        {exists && <p className="text-xs text-rose-600">A month for {monthName(month)} {year} already exists.</p>}
+        <div className="flex justify-end gap-2 pt-2">
+          <button onClick={onClose} className="btn-outline">Cancel</button>
+          <button
+            onClick={() => onSave({ month: Number(month), year: Number(year), price: Number(price) })}
+            disabled={saving || exists}
+            className="btn-gold"
+          >
+            {saving ? 'Adding…' : 'Add Month'}
           </button>
         </div>
       </div>
-
-      <div className="card p-5">
-        <h3 className="font-serif text-lg font-bold text-midnight-900 mb-3">Materials ({fullDoc.materials?.length || 0})</h3>
-        {!fullDoc.materials?.length ? (
-          <p className="text-midnight-500 text-sm text-center py-6">No materials yet.</p>
-        ) : (
-          <div className="space-y-2">
-            {fullDoc.materials.map(m => (
-              <div key={m._id} className="flex items-center gap-3 p-3 rounded-lg border border-midnight-100">
-                <FileText className="text-gold-600" />
-                <div className="flex-1 min-w-0">
-                  <a href={m.fileUrl} target="_blank" rel="noreferrer" className="font-medium text-midnight-900 truncate hover:underline">{m.title}</a>
-                  <p className="text-xs text-midnight-500">{m.fileType} · {(m.fileSize / 1024 / 1024).toFixed(1)} MB</p>
-                </div>
-                <button onClick={() => onDel(m._id)} className="text-rose-600 p-2 hover:bg-rose-50 rounded-lg"><Trash2 size={16} /></button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+    </Modal>
   );
 }
 
-function ZoomTab({ fullCls, onAdd, onDel }) {
-  const { data: list } = useQuery({
-    queryKey: ['t-classes'],
-    queryFn: async () => (await api.get('/classes')).data,
-  });
-  const fullDoc = list?.classes.find(c => c._id === fullCls._id) || {};
-  const [form, setForm] = useState({ title: '', url: '', scheduledAt: '', duration: 60 });
-
+function BulkYearModal({ open, onClose, defaultPrice, onSave, saving }) {
+  const [year, setYear] = useState(new Date().getFullYear() + 1);
+  const [price, setPrice] = useState(defaultPrice);
   return (
-    <div className="space-y-4 max-w-3xl">
-      <div className="card p-5">
-        <h3 className="font-serif text-lg font-bold text-midnight-900 mb-3">Add Live Session</h3>
-        <div className="grid sm:grid-cols-2 gap-3">
-          <input className="input" placeholder="Session title" value={form.title} onChange={e => setForm({...form, title: e.target.value})} />
-          <input className="input" placeholder="Zoom URL" value={form.url} onChange={e => setForm({...form, url: e.target.value})} />
-          <input type="datetime-local" className="input" value={form.scheduledAt} onChange={e => setForm({...form, scheduledAt: e.target.value})} />
-          <input type="number" className="input" placeholder="Duration (min)" value={form.duration} onChange={e => setForm({...form, duration: Number(e.target.value)})} />
+    <Modal open={open} onClose={onClose} title="Pre-create months for a year">
+      <div className="space-y-3">
+        <p className="text-sm text-midnight-600">
+          Creates Jan–Dec at the same default price. Months that already exist are skipped.
+          You can change individual prices afterwards.
+        </p>
+        <div>
+          <label className="label">Year</label>
+          <input type="number" className="input" value={year} onChange={e => setYear(Number(e.target.value))} />
         </div>
-        <button
-          onClick={() => { onAdd(form); setForm({ title: '', url: '', scheduledAt: '', duration: 60 }); }}
-          disabled={!form.title || !form.url || !form.scheduledAt}
-          className="btn-gold mt-3"
-        ><Plus size={16} /> Add Session</button>
+        <div>
+          <label className="label">Default price (LKR)</label>
+          <input type="number" className="input" value={price} onChange={e => setPrice(e.target.value)} />
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <button onClick={onClose} className="btn-outline">Cancel</button>
+          <button
+            onClick={() => onSave({ year, defaultPrice: Number(price) })}
+            disabled={saving}
+            className="btn-gold"
+          >
+            {saving ? 'Creating…' : 'Create months'}
+          </button>
+        </div>
       </div>
-
-      <div className="card p-5">
-        <h3 className="font-serif text-lg font-bold text-midnight-900 mb-3">Sessions ({fullDoc.zoomLinks?.length || 0})</h3>
-        {!fullDoc.zoomLinks?.length ? (
-          <p className="text-midnight-500 text-sm text-center py-6">No sessions scheduled.</p>
-        ) : (
-          <div className="space-y-2">
-            {fullDoc.zoomLinks
-              .slice()
-              .sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt))
-              .map(z => {
-                const past = new Date(z.scheduledAt).getTime() < Date.now();
-                return (
-                  <div key={z._id} className="flex items-center gap-3 p-3 rounded-lg border border-midnight-100">
-                    <Calendar className={past ? 'text-midnight-400' : 'text-gold-600'} />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-midnight-900 truncate">{z.title}</p>
-                      <p className="text-xs text-midnight-500">
-                        {format(new Date(z.scheduledAt), 'PPPp')} · {z.duration} min · {past ? 'past' : 'upcoming'}
-                      </p>
-                    </div>
-                    <a href={z.url} target="_blank" rel="noreferrer" className="text-gold-700 text-sm hover:underline">Open</a>
-                    <button onClick={() => onDel(z._id)} className="text-rose-600 p-2 hover:bg-rose-50 rounded-lg"><Trash2 size={16} /></button>
-                  </div>
-                );
-              })}
-          </div>
-        )}
-      </div>
-    </div>
+    </Modal>
   );
 }
 

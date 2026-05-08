@@ -11,6 +11,7 @@ import StudentDashboard from './pages/student/Dashboard';
 import BrowseClasses from './pages/student/BrowseClasses';
 import ClassDetail from './pages/student/ClassDetail';
 import ClassLearn from './pages/student/ClassLearn';
+import MonthLearn from './pages/student/MonthLearn';
 import StudentPayments from './pages/student/Payments';
 import StudentProfile from './pages/student/Profile';
 import MyEnrollments from './pages/student/MyEnrollments';
@@ -18,6 +19,7 @@ import MyEnrollments from './pages/student/MyEnrollments';
 import TeacherDashboard from './pages/teacher/Dashboard';
 import TeacherClasses from './pages/teacher/Classes';
 import TeacherClassEdit from './pages/teacher/ClassEdit';
+import TeacherMonthEdit from './pages/teacher/MonthEdit';
 import TeacherStudents from './pages/teacher/Students';
 import TeacherPayments from './pages/teacher/Payments';
 import TeacherSettings from './pages/teacher/Settings';
@@ -45,6 +47,7 @@ export default function App() {
         <Route path="/classes" element={<BrowseClasses />} />
         <Route path="/classes/:id" element={<ClassDetail />} />
         <Route path="/classes/:id/learn" element={<ClassLearn />} />
+        <Route path="/classes/:id/months/:year/:month/learn" element={<MonthLearn />} />
         <Route path="/enrollments" element={<MyEnrollments />} />
         <Route path="/payments" element={<StudentPayments />} />
         <Route path="/profile" element={<StudentProfile />} />
@@ -55,6 +58,7 @@ export default function App() {
         <Route path="/teacher/dashboard" element={<TeacherDashboard />} />
         <Route path="/teacher/classes" element={<TeacherClasses />} />
         <Route path="/teacher/classes/:id/edit" element={<TeacherClassEdit />} />
+        <Route path="/teacher/classes/:id/months/:year/:month/edit" element={<TeacherMonthEdit />} />
         <Route path="/teacher/students" element={<TeacherStudents />} />
         <Route path="/teacher/payments" element={<TeacherPayments />} />
         <Route path="/teacher/settings" element={<TeacherSettings />} />

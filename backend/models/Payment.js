@@ -8,7 +8,7 @@ const paymentSchema = new mongoose.Schema({
   currency: { type: String, default: 'LKR' },
   month: { type: Number, min: 1, max: 12 },
   year: { type: Number },
-  status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending', index: true },
+  status: { type: String, enum: ['pending', 'approved', 'rejected', 'refunded'], default: 'pending', index: true },
   slipUrl: { type: String, default: '' },
   slipUploadedAt: Date,
   payhereOrderId: { type: String, index: true },

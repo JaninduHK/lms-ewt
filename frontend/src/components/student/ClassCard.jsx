@@ -28,8 +28,17 @@ export default function ClassCard({ cls }) {
         <p className="text-sm text-midnight-500 mt-2 line-clamp-2 flex-1">{cls.description}</p>
         <div className="mt-4 flex items-center justify-between">
           <div>
-            <p className="font-serif text-xl font-bold text-midnight-900">{formatLKR(cls.price, cls.currency)}</p>
-            <p className="text-xs text-midnight-500">{cls.type === 'subscription' ? 'per month' : 'one-time'}</p>
+            {cls.type === 'subscription' ? (
+              <>
+                <p className="font-serif text-xl font-bold text-midnight-900">Monthly</p>
+                <p className="text-xs text-midnight-500">Buy each month separately</p>
+              </>
+            ) : (
+              <>
+                <p className="font-serif text-xl font-bold text-midnight-900">{formatLKR(cls.price, cls.currency)}</p>
+                <p className="text-xs text-midnight-500">one-time</p>
+              </>
+            )}
           </div>
           <Link to={`/classes/${cls._id}`} className="btn-primary">
             View <ArrowRight size={14} />

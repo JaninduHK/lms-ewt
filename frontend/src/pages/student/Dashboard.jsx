@@ -23,7 +23,14 @@ export default function Dashboard() {
 
   const enrollments = data?.enrollments || [];
   const activeSubs = enrollments.filter(e => e.classId?.type === 'subscription').length;
-  const totalMaterials = enrollments.reduce((s, e) => s + (e.classId?.materials?.length || 0), 0);
+  const totalMaterials = enrollments.reduce((sum, e) => {
+    const c = e.classId;
+    if (!c) return sum;
+    if (c.type === 'subscription') {
+      return sum + (c.months || []).reduce((a, m) => a + (m.materialCount ?? m.materials?.length ?? 0), 0);
+    }
+    return sum + (c.materials?.length || 0);
+  }, 0);
 
   return (
     <div className="space-y-8">

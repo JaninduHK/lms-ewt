@@ -2,7 +2,6 @@ const Enrollment = require('../models/Enrollment');
 const Payment = require('../models/Payment');
 const Class = require('../models/Class');
 
-// Verify enrollment exists for the requesting student + classId in params
 const checkEnrollment = async (req, res, next) => {
   try {
     if (req.user.role !== 'student') return next();
@@ -22,14 +21,22 @@ const checkEnrollment = async (req, res, next) => {
   }
 };
 
-// Full access gate: enrollment + payment logic for subscription/onetime
+// Onetime classes: enrollment + any approved Payment grants lifetime access.
+// Subscription classes are gated per-month by checkMonthAccess instead.
 const checkClassAccess = async (req, res, next) => {
   try {
     if (req.user.role === 'teacher' || req.user.role === 'admin') return next();
 
     const classId = req.params.id || req.params.classId;
-    const cls = await Class.findById(classId);
+    const cls = await Class.findById(classId).select('type');
     if (!cls) return res.status(404).json({ message: 'Class not found' });
+
+    if (cls.type !== 'onetime') {
+      return res.status(400).json({
+        message: 'This route is for onetime classes. Use /months/:year/:month/content.',
+        code: 'USE_MONTH_ROUTE',
+      });
+    }
 
     const enrollment = await Enrollment.findOne({
       studentId: req.user._id,
@@ -40,36 +47,6 @@ const checkClassAccess = async (req, res, next) => {
       return res.status(403).json({ message: 'Please enroll in this class first', code: 'NOT_ENROLLED' });
     }
 
-    if (cls.type === 'subscription') {
-      const now = new Date();
-      const day = now.getDate();
-      if (day <= 10) {
-        req.accessReason = 'free_window';
-        return next();
-      }
-      const month = now.getMonth() + 1;
-      const year = now.getFullYear();
-      const paid = await Payment.findOne({
-        studentId: req.user._id,
-        classId,
-        month,
-        year,
-        status: 'approved',
-      });
-      if (!paid) {
-        return res.status(403).json({
-          message: `Payment required for ${month}/${year} to access this class`,
-          code: 'PAYMENT_REQUIRED',
-          classType: 'subscription',
-          month,
-          year,
-        });
-      }
-      req.accessReason = 'paid_subscription';
-      return next();
-    }
-
-    // onetime
     const paid = await Payment.findOne({
       studentId: req.user._id,
       classId,
@@ -89,4 +66,60 @@ const checkClassAccess = async (req, res, next) => {
   }
 };
 
-module.exports = { checkEnrollment, checkClassAccess };
+// Subscription classes: enrollment + approved Payment for the specific {month, year}.
+// month.isPublished gates visibility/purchase, NOT access — paid students keep access
+// even if the teacher later un-publishes the month.
+const checkMonthAccess = async (req, res, next) => {
+  try {
+    if (req.user.role === 'teacher' || req.user.role === 'admin') return next();
+
+    const classId = req.params.id || req.params.classId;
+    const month = parseInt(req.params.month, 10);
+    const year = parseInt(req.params.year, 10);
+    if (!month || !year || month < 1 || month > 12) {
+      return res.status(400).json({ message: 'Invalid month/year' });
+    }
+
+    const cls = await Class.findById(classId);
+    if (!cls) return res.status(404).json({ message: 'Class not found' });
+    if (cls.type !== 'subscription') {
+      return res.status(400).json({ message: 'Not a subscription class', code: 'NOT_SUBSCRIPTION' });
+    }
+    const monthDoc = (cls.months || []).find(m => m.month === month && m.year === year);
+    if (!monthDoc) return res.status(404).json({ message: 'Month not found', code: 'MONTH_NOT_FOUND' });
+
+    const enrollment = await Enrollment.findOne({
+      studentId: req.user._id,
+      classId,
+      status: 'active',
+    });
+    if (!enrollment) {
+      return res.status(403).json({ message: 'Please enroll in this class first', code: 'NOT_ENROLLED' });
+    }
+
+    const paid = await Payment.findOne({
+      studentId: req.user._id,
+      classId,
+      month,
+      year,
+      status: 'approved',
+    });
+    if (!paid) {
+      return res.status(403).json({
+        message: `Payment required for ${month}/${year}`,
+        code: 'PAYMENT_REQUIRED',
+        classType: 'subscription',
+        month, year,
+      });
+    }
+
+    req.classDoc = cls;
+    req.monthDoc = monthDoc;
+    req.accessReason = 'paid_month';
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { checkEnrollment, checkClassAccess, checkMonthAccess };
