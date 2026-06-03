@@ -48,6 +48,10 @@ export default function MonthEdit() {
     mutationFn: (vid) => api.delete(`${base}/videos/${vid}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['t-classes'] }),
   });
+  const updVideo = useMutation({
+    mutationFn: ({ vid, patch }) => api.put(`${base}/videos/${vid}`, patch),
+    onSuccess: () => { toast.success('Video updated'); qc.invalidateQueries({ queryKey: ['t-classes'] }); },
+  });
   const reorderVideos = useMutation({
     mutationFn: (order) => api.put(`${base}/videos/reorder`, { order }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['t-classes'] }),
@@ -113,6 +117,7 @@ export default function MonthEdit() {
           onAdd={(p) => addVideo.mutateAsync(p)}
           onRemove={(vid) => delVideo.mutateAsync(vid)}
           onReorder={(order) => reorderVideos.mutateAsync(order)}
+          onUpdate={(vid, patch) => updVideo.mutateAsync({ vid, patch })}
         />
       )}
       {tab === 'materials' && (

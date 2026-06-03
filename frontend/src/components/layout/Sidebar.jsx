@@ -33,7 +33,6 @@ export default function Sidebar({ items, open, onClose }) {
             <h1 className="font-serif text-2xl font-bold tracking-tight">
               Econ With <span className="text-gold-400">Thusitha</span>
             </h1>
-            <p className="text-xs text-midnight-300 mt-0.5">A/L Economics Tuition</p>
           </div>
           <button onClick={onClose} className="lg:hidden text-midnight-300 hover:text-white">
             <X size={22} />

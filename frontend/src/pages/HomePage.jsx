@@ -30,9 +30,6 @@ export default function HomePage() {
             <p className="font-serif text-xl sm:text-2xl font-bold leading-none">
               Econ With <span className="text-gold-400">Thusitha</span>
             </p>
-            <p className="text-[11px] text-midnight-300 tracking-wider uppercase mt-1">
-              A/L Economics · Sri Lanka
-            </p>
           </Link>
 
           <nav className="hidden sm:flex items-center gap-2 sm:gap-3">

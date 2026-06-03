@@ -47,6 +47,10 @@ export default function ClassEdit() {
     mutationFn: (vid) => api.delete(`/classes/${id}/videos/${vid}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['t-classes'] }),
   });
+  const updVideo = useMutation({
+    mutationFn: ({ vid, patch }) => api.put(`/classes/${id}/videos/${vid}`, patch),
+    onSuccess: () => { toast.success('Video updated'); qc.invalidateQueries({ queryKey: ['t-classes'] }); },
+  });
   const reorderVideos = useMutation({
     mutationFn: (order) => api.put(`/classes/${id}/videos/reorder`, { order }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['t-classes'] }),
@@ -128,6 +132,7 @@ export default function ClassEdit() {
           onAdd={(p) => addVideo.mutateAsync(p)}
           onRemove={(vid) => delVideo.mutateAsync(vid)}
           onReorder={(order) => reorderVideos.mutateAsync(order)}
+          onUpdate={(vid, patch) => updVideo.mutateAsync({ vid, patch })}
         />
       )}
 

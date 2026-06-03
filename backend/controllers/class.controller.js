@@ -1,6 +1,7 @@
 const Class = require('../models/Class');
 const Enrollment = require('../models/Enrollment');
 const Payment = require('../models/Payment');
+const VideoView = require('../models/VideoView');
 const { detectVideo } = require('../utils/embed');
 
 // ─────────── helpers ───────────
@@ -10,6 +11,32 @@ const findMonth = (cls, year, month) =>
 
 const sortMonthsAsc = (months) =>
   [...(months || [])].sort((a, b) => (a.year - b.year) || (a.month - b.month));
+
+// Returns a map of videoId -> { count, maxViews, remaining, locked } for the given student.
+const buildViewMap = async (studentId, classId, videos) => {
+  if (!studentId || !videos?.length) return new Map();
+  const ids = videos.map(v => v._id);
+  const records = await VideoView.find({ studentId, classId, videoId: { $in: ids } });
+  const byId = new Map(records.map(r => [r.videoId.toString(), r]));
+  const result = new Map();
+  for (const v of videos) {
+    const rec = byId.get(v._id.toString());
+    const count = rec?.count || 0;
+    const max = v.maxViews || null;
+    const locked = !!(max && count >= max);
+    const remaining = max ? Math.max(0, max - count) : null;
+    result.set(v._id.toString(), { count, maxViews: max, remaining, locked });
+  }
+  return result;
+};
+
+const decorateVideos = (videos, viewMap) =>
+  videos.map(v => {
+    const obj = v.toObject ? v.toObject() : { ...v };
+    const view = viewMap.get(v._id.toString());
+    if (view) obj.viewState = view;
+    return obj;
+  });
 
 const guardOnetime = (cls, res) => {
   if (cls.type === 'subscription') {
@@ -151,13 +178,17 @@ const content = async (req, res, next) => {
     const cls = await Class.findById(req.params.id);
     if (!cls) return res.status(404).json({ message: 'Class not found' });
     if (!guardOnetime(cls, res)) return;
+    const sortedVideos = [...cls.videos].sort((a, b) => a.order - b.order);
+    const viewMap = req.user?.role === 'student'
+      ? await buildViewMap(req.user._id, cls._id, sortedVideos)
+      : new Map();
     res.json({
       class: {
         _id: cls._id,
         title: cls.title,
         description: cls.description,
         type: cls.type,
-        videos: [...cls.videos].sort((a, b) => a.order - b.order),
+        videos: decorateVideos(sortedVideos, viewMap),
         materials: cls.materials,
         zoomLinks: [...cls.zoomLinks].sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt)),
       },
@@ -208,13 +239,46 @@ const addVideo = async (req, res, next) => {
     const cls = await Class.findById(req.params.id);
     if (!cls) return res.status(404).json({ message: 'Class not found' });
     if (!guardOnetime(cls, res)) return;
-    const { title, url } = req.body;
+    const { title, url, maxViews } = req.body;
     if (!title || !url) return res.status(400).json({ message: 'title and url required' });
     const detected = detectVideo(url);
     if (!detected) return res.status(400).json({ message: 'Unsupported video URL (YouTube/Vimeo only)' });
-    cls.videos.push({ title, url, ...detected, order: cls.videos.length });
+    cls.videos.push({
+      title, url, ...detected, order: cls.videos.length,
+      maxViews: maxViews ? Number(maxViews) : null,
+    });
     await cls.save();
     res.status(201).json({ class: cls });
+  } catch (err) { next(err); }
+};
+
+const updateVideo = async (req, res, next) => {
+  try {
+    const cls = await Class.findById(req.params.id);
+    if (!cls) return res.status(404).json({ message: 'Class not found' });
+    if (!guardOnetime(cls, res)) return;
+    const v = cls.videos.id(req.params.videoId);
+    if (!v) return res.status(404).json({ message: 'Video not found' });
+    if ('title' in req.body) v.title = req.body.title;
+    if ('maxViews' in req.body) v.maxViews = req.body.maxViews ? Number(req.body.maxViews) : null;
+    await cls.save();
+    res.json({ class: cls });
+  } catch (err) { next(err); }
+};
+
+const updateMonthVideo = async (req, res, next) => {
+  try {
+    const cls = await Class.findById(req.params.id);
+    if (!cls) return res.status(404).json({ message: 'Class not found' });
+    if (!guardSubscription(cls, res)) return;
+    const m = findMonth(cls, req.params.year, req.params.month);
+    if (!m) return res.status(404).json({ message: 'Month not found' });
+    const v = m.videos.id(req.params.videoId);
+    if (!v) return res.status(404).json({ message: 'Video not found' });
+    if ('title' in req.body) v.title = req.body.title;
+    if ('maxViews' in req.body) v.maxViews = req.body.maxViews ? Number(req.body.maxViews) : null;
+    await cls.save();
+    res.json({ class: cls });
   } catch (err) { next(err); }
 };
 
@@ -398,11 +462,14 @@ const monthMutator = (handler) => async (req, res, next) => {
 };
 
 const addMonthVideo = monthMutator(async (req, res, cls, m) => {
-  const { title, url } = req.body;
+  const { title, url, maxViews } = req.body;
   if (!title || !url) throw Object.assign(new Error('title and url required'), { status: 400 });
   const detected = detectVideo(url);
   if (!detected) throw Object.assign(new Error('Unsupported video URL'), { status: 400 });
-  m.videos.push({ title, url, ...detected, order: m.videos.length });
+  m.videos.push({
+    title, url, ...detected, order: m.videos.length,
+    maxViews: maxViews ? Number(maxViews) : null,
+  });
   res.status(201);
 });
 
@@ -459,13 +526,17 @@ const monthContent = async (req, res, next) => {
     if (!cls) return res.status(404).json({ message: 'Class not found' });
     const m = req.monthDoc || findMonth(cls, req.params.year, req.params.month);
     if (!m) return res.status(404).json({ message: 'Month not found' });
+    const sortedVideos = [...m.videos].sort((a, b) => a.order - b.order);
+    const viewMap = req.user?.role === 'student'
+      ? await buildViewMap(req.user._id, cls._id, sortedVideos)
+      : new Map();
     res.json({
       class: { _id: cls._id, title: cls.title, type: cls.type },
       month: {
         _id: m._id,
         month: m.month,
         year: m.year,
-        videos: [...m.videos].sort((a, b) => a.order - b.order),
+        videos: decorateVideos(sortedVideos, viewMap),
         materials: m.materials,
         zoomLinks: [...m.zoomLinks].sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt)),
       },
@@ -474,17 +545,84 @@ const monthContent = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+// Atomically increment a student's view count for a single video.
+// Returns the new count + locked flag. Refuses to increment if already locked.
+const recordVideoView = async (req, res, next) => {
+  try {
+    const { id, videoId } = req.params;
+    const year = req.params.year ? parseInt(req.params.year, 10) : null;
+    const month = req.params.month ? parseInt(req.params.month, 10) : null;
+
+    const cls = await Class.findById(id);
+    if (!cls) return res.status(404).json({ message: 'Class not found' });
+
+    // Locate video and verify access. Subscription videos require month-scoped access;
+    // onetime videos require onetime payment.
+    let video = null;
+    if (month && year) {
+      if (cls.type !== 'subscription') return res.status(400).json({ message: 'Not a subscription class' });
+      const m = findMonth(cls, year, month);
+      if (!m) return res.status(404).json({ message: 'Month not found' });
+      video = m.videos.id(videoId);
+      if (!video) return res.status(404).json({ message: 'Video not found' });
+      // Require approved payment for this month
+      const paid = await Payment.findOne({
+        studentId: req.user._id, classId: cls._id, month, year, status: 'approved',
+      });
+      if (!paid) return res.status(403).json({ message: 'Payment required', code: 'PAYMENT_REQUIRED' });
+    } else {
+      if (cls.type !== 'onetime') return res.status(400).json({ message: 'Subscription videos require year/month' });
+      video = cls.videos.id(videoId);
+      if (!video) return res.status(404).json({ message: 'Video not found' });
+      const paid = await Payment.findOne({
+        studentId: req.user._id, classId: cls._id, status: 'approved',
+      });
+      if (!paid) return res.status(403).json({ message: 'Payment required', code: 'PAYMENT_REQUIRED' });
+    }
+
+    const max = video.maxViews || null;
+    // Refuse if already at/over the limit
+    const existing = await VideoView.findOne({
+      studentId: req.user._id, videoId: video._id,
+    });
+    if (max && existing && existing.count >= max) {
+      return res.status(403).json({
+        message: 'View limit reached for this video',
+        code: 'VIEW_LIMIT_REACHED',
+        viewState: { count: existing.count, maxViews: max, remaining: 0, locked: true },
+      });
+    }
+
+    const doc = await VideoView.findOneAndUpdate(
+      { studentId: req.user._id, videoId: video._id },
+      {
+        $setOnInsert: { classId: cls._id, year, month },
+        $inc: { count: 1 },
+        $set: { lastViewedAt: new Date() },
+      },
+      { new: true, upsert: true }
+    );
+
+    const count = doc.count;
+    const remaining = max ? Math.max(0, max - count) : null;
+    const locked = !!(max && count >= max);
+    res.json({ viewState: { count, maxViews: max, remaining, locked } });
+  } catch (err) { next(err); }
+};
+
 module.exports = {
   list, detail, content, create, update, remove,
   // onetime root content
-  addVideo, removeVideo, reorderVideos,
+  addVideo, updateVideo, removeVideo, reorderVideos,
   addMaterial, removeMaterial,
   addZoom, removeZoom,
   // months
   addMonth, bulkCreateMonths, updateMonth, removeMonth,
   // per-month content
-  addMonthVideo, removeMonthVideo, reorderMonthVideos,
+  addMonthVideo, updateMonthVideo, removeMonthVideo, reorderMonthVideos,
   addMonthMaterial, removeMonthMaterial,
   addMonthZoom, removeMonthZoom,
   monthContent,
+  // view tracking
+  recordVideoView,
 };

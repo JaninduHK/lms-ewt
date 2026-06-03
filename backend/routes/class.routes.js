@@ -17,7 +17,11 @@ router.delete('/:id', authenticate, requireRole('teacher'), ctrl.remove);
 // onetime root-level content (rejected for subscription classes)
 router.post('/:id/videos', authenticate, requireRole('teacher'), ctrl.addVideo);
 router.put('/:id/videos/reorder', authenticate, requireRole('teacher'), ctrl.reorderVideos);
+router.put('/:id/videos/:videoId', authenticate, requireRole('teacher'), ctrl.updateVideo);
 router.delete('/:id/videos/:videoId', authenticate, requireRole('teacher'), ctrl.removeVideo);
+
+// view recording (student)
+router.post('/:id/videos/:videoId/view', authenticate, requireRole('student'), ctrl.recordVideoView);
 
 router.post('/:id/materials', authenticate, requireRole('teacher'), ctrl.addMaterial);
 router.delete('/:id/materials/:materialId', authenticate, requireRole('teacher'), ctrl.removeMaterial);
@@ -34,7 +38,11 @@ router.delete('/:id/months/:year/:month', authenticate, requireRole('teacher'), 
 // per-month content (teacher)
 router.post('/:id/months/:year/:month/videos', authenticate, requireRole('teacher'), ctrl.addMonthVideo);
 router.put('/:id/months/:year/:month/videos/reorder', authenticate, requireRole('teacher'), ctrl.reorderMonthVideos);
+router.put('/:id/months/:year/:month/videos/:videoId', authenticate, requireRole('teacher'), ctrl.updateMonthVideo);
 router.delete('/:id/months/:year/:month/videos/:videoId', authenticate, requireRole('teacher'), ctrl.removeMonthVideo);
+
+// view recording (student) — per-month
+router.post('/:id/months/:year/:month/videos/:videoId/view', authenticate, requireRole('student'), ctrl.recordVideoView);
 
 router.post('/:id/months/:year/:month/materials', authenticate, requireRole('teacher'), ctrl.addMonthMaterial);
 router.delete('/:id/months/:year/:month/materials/:materialId', authenticate, requireRole('teacher'), ctrl.removeMonthMaterial);

@@ -6,6 +6,8 @@ const videoSchema = new mongoose.Schema({
   url: { type: String, required: true },
   embedId: { type: String, required: true },
   order: { type: Number, default: 0 },
+  // null or 0 means unlimited views
+  maxViews: { type: Number, default: null },
 }, { timestamps: true });
 
 const materialSchema = new mongoose.Schema({
