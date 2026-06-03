@@ -80,15 +80,30 @@ const initPayHere = async (req, res, next) => {
       amount = cls.price;
     }
 
+    // Fail loudly if PayHere isn't configured — PayHere otherwise returns its generic
+    // 410xxxx error which is confusing.
+    const requiredEnv = [
+      'PAYHERE_MERCHANT_ID', 'PAYHERE_MERCHANT_SECRET',
+      'PAYHERE_NOTIFY_URL', 'PAYHERE_RETURN_URL', 'PAYHERE_CANCEL_URL',
+    ];
+    const missing = requiredEnv.filter(k => !process.env[k]);
+    if (missing.length) {
+      console.error('[PayHere] Missing env vars:', missing);
+      return res.status(500).json({
+        message: `PayHere is not configured on the server. Missing: ${missing.join(', ')}. Please contact support.`,
+        code: 'PAYHERE_NOT_CONFIGURED',
+      });
+    }
+
     const orderId = `EC-${Date.now()}-${req.user.studentId || req.user._id.toString().slice(-6)}`;
     data.payhereOrderId = orderId;
     const payment = await Payment.create(data);
 
-    const merchantId = process.env.PAYHERE_MERCHANT_ID || '';
-    const secret = process.env.PAYHERE_MERCHANT_SECRET || '';
-    const hash = secret ? generateHash({
+    const merchantId = process.env.PAYHERE_MERCHANT_ID;
+    const secret = process.env.PAYHERE_MERCHANT_SECRET;
+    const hash = generateHash({
       merchantId, orderId, amount, currency: cls.currency, secret,
-    }) : null;
+    });
 
     res.json({
       payment,
