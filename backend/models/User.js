@@ -7,7 +7,7 @@ const userSchema = new mongoose.Schema({
   studentId: { type: String, unique: true, sparse: true, index: true },
   firstName: { type: String, required: true, trim: true },
   lastName: { type: String, required: true, trim: true },
-  username: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
+  username: { type: String, unique: true, sparse: true, lowercase: true, trim: true, index: true },
   email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
   password: { type: String, required: true, minlength: 8 },
   course: { type: String, enum: COURSES },

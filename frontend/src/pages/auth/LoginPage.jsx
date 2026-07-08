@@ -8,7 +8,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 
 const schema = z.object({
-  identifier: z.string().min(3, 'Enter your email or username'),
+  identifier: z.string().min(3, 'Enter your student ID'),
   password: z.string().min(1, 'Password required'),
 });
 
@@ -65,12 +65,12 @@ export default function LoginPage() {
             </Link>
           </div>
           <h1 className="font-serif text-3xl font-bold text-midnight-900">Sign In</h1>
-          <p className="text-midnight-500 mt-2">Welcome back. Enter your credentials below.</p>
+          <p className="text-midnight-500 mt-2">Welcome back. Enter your Student ID and password below.</p>
 
           <form onSubmit={handleSubmit(onSubmit)} className="mt-8 space-y-5">
             <div>
-              <label className="label">Email or Username</label>
-              <input className="input" autoComplete="username" {...register('identifier')} />
+              <label className="label">Student ID</label>
+              <input className="input" autoComplete="off" placeholder="EC123456" {...register('identifier')} />
               {errors.identifier && <p className="text-rose-600 text-xs mt-1">{errors.identifier.message}</p>}
             </div>
             <div>

@@ -12,7 +12,6 @@ import { useAuth } from '../../context/AuthContext';
 const schema = z.object({
   firstName: z.string().min(1, 'Required'),
   lastName: z.string().min(1, 'Required'),
-  username: z.string().min(3, 'At least 3 characters').regex(/^[a-zA-Z0-9_.-]+$/, 'Only letters, numbers, _ . -'),
   email: z.string().email('Valid email required'),
   password: z.string().min(8, 'At least 8 characters'),
   passwordConfirm: z.string(),
@@ -90,11 +89,6 @@ export default function RegisterPage() {
               <label className="label">Last Name</label>
               <input className="input" {...register('lastName')} />
               {errors.lastName && <p className="text-rose-600 text-xs mt-1">{errors.lastName.message}</p>}
-            </div>
-            <div>
-              <label className="label">Username</label>
-              <input className="input" {...register('username')} />
-              {errors.username && <p className="text-rose-600 text-xs mt-1">{errors.username.message}</p>}
             </div>
             <div>
               <label className="label">Email</label>

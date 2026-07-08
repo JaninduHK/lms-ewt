@@ -175,7 +175,6 @@ function StudentDetailModal({ id, onClose }) {
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
-            <div><p className="text-midnight-500 text-xs uppercase">Username</p><p className="font-medium">{data.student.username}</p></div>
             <div><p className="text-midnight-500 text-xs uppercase">Course</p><p className="font-medium">{data.student.course || '—'}</p></div>
             <div><p className="text-midnight-500 text-xs uppercase">WhatsApp</p><p className="font-medium">{data.student.whatsapp || '—'}</p></div>
             <div><p className="text-midnight-500 text-xs uppercase">School</p><p className="font-medium">{data.student.school || '—'}</p></div>

@@ -2,15 +2,17 @@ const User = require('../models/User');
 const { signAccess, signRefresh, verifyRefresh, cookieOptions } = require('../utils/jwt');
 const { COURSES, SRI_LANKA_DISTRICTS } = require('../config/constants');
 
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 const register = async (req, res, next) => {
   try {
     const {
-      firstName, lastName, username, email,
+      firstName, lastName, email,
       password, passwordConfirm,
       course, whatsapp, school, district,
     } = req.body;
 
-    if (!firstName || !lastName || !username || !email || !password) {
+    if (!firstName || !lastName || !email || !password) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
     if (password.length < 8) {
@@ -26,19 +28,20 @@ const register = async (req, res, next) => {
       return res.status(400).json({ message: 'Invalid district' });
     }
 
-    const exists = await User.findOne({ $or: [{ email: email.toLowerCase() }, { username: username.toLowerCase() }] });
+    const exists = await User.findOne({ email: email.toLowerCase() });
     if (exists) {
-      return res.status(409).json({
-        message: exists.email === email.toLowerCase() ? 'Email already registered' : 'Username already taken',
-      });
+      return res.status(409).json({ message: 'Email already registered' });
     }
 
     const user = await User.create({
-      firstName, lastName,
-      username: username.toLowerCase(),
+      firstName,
+      lastName,
       email: email.toLowerCase(),
       password,
-      course, whatsapp, school, district,
+      course,
+      whatsapp,
+      school,
+      district,
       role: 'student',
     });
 
@@ -57,13 +60,23 @@ const register = async (req, res, next) => {
 
 const login = async (req, res, next) => {
   try {
-    const { identifier, password } = req.body; // identifier = email or username
+    const { identifier, password } = req.body;
     if (!identifier || !password) {
       return res.status(400).json({ message: 'Missing credentials' });
     }
-    const user = await User.findOne({
-      $or: [{ email: identifier.toLowerCase() }, { username: identifier.toLowerCase() }],
-    });
+
+    const normalized = identifier.trim();
+    const isEmail = normalized.includes('@');
+    const user = isEmail
+      ? await User.findOne({ email: normalized.toLowerCase() })
+      : await User.findOne({
+          $or: [
+            { studentId: { $regex: `^${escapeRegExp(normalized)}$`, $options: 'i' } },
+            { username: normalized.toLowerCase() },
+            { email: normalized.toLowerCase() },
+          ],
+        });
+
     if (!user) return res.status(401).json({ message: 'Invalid credentials' });
     const ok = await user.comparePassword(password);
     if (!ok) return res.status(401).json({ message: 'Invalid credentials' });

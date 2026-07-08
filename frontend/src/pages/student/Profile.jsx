@@ -28,7 +28,6 @@ export default function Profile() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-          <Field label="Username" value={user.username} />
           <Field label="Course" value={user.course} />
           <Field label="WhatsApp" value={user.whatsapp} />
           <Field label="School" value={user.school} />
