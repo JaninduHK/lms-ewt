@@ -88,6 +88,7 @@ export default function TeacherPayments() {
             <option value="all">All types</option>
             <option value="bank_transfer">Bank Transfer</option>
             <option value="payhere">PayHere</option>
+            <option value="manual">Manual Grant</option>
           </select>
           <select className="input" value={filters.classId} onChange={e => updateFilter('classId', e.target.value)}>
             <option value="">All classes</option>

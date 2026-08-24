@@ -3,6 +3,7 @@ const ctrl = require('../controllers/enrollment.controller');
 const { authenticate, requireRole } = require('../middleware/auth.middleware');
 
 router.post('/', authenticate, requireRole('student'), ctrl.enroll);
+router.post('/manual', authenticate, requireRole('teacher'), ctrl.enrollByTeacher);
 router.get('/my', authenticate, requireRole('student'), ctrl.myEnrollments);
 router.get('/class/:classId', authenticate, requireRole('teacher'), ctrl.classEnrollments);
 

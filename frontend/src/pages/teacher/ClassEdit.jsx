@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Save, Plus, Trash2, Video, FileText, Calendar, Users,
-  Settings as SettingsIcon, Layers, ArrowRight, Eye, EyeOff,
+  Settings as SettingsIcon, Layers, ArrowRight, Eye, EyeOff, Search, UserPlus,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -152,7 +152,7 @@ export default function ClassEdit() {
         />
       )}
 
-      {tab === 'students' && <StudentsTab enrollments={enr?.enrollments || []} />}
+      {tab === 'students' && <StudentsTab cls={cls} enrollments={enr?.enrollments || []} />}
     </div>
   );
 }
@@ -422,10 +422,16 @@ function BulkYearModal({ open, onClose, defaultPrice, onSave, saving }) {
   );
 }
 
-function StudentsTab({ enrollments }) {
+function StudentsTab({ cls, enrollments }) {
+  const [openEnroll, setOpenEnroll] = useState(false);
   return (
     <div className="card p-5 max-w-5xl">
-      <h3 className="font-serif text-lg font-bold text-midnight-900 mb-3">Enrolled Students ({enrollments.length})</h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-serif text-lg font-bold text-midnight-900">Enrolled Students ({enrollments.length})</h3>
+        <button onClick={() => setOpenEnroll(true)} className="btn-gold">
+          <UserPlus size={16} /> Enroll Student
+        </button>
+      </div>
       {enrollments.length === 0 ? (
         <p className="text-midnight-500 text-sm text-center py-6">No students enrolled yet.</p>
       ) : (
@@ -454,6 +460,149 @@ function StudentsTab({ enrollments }) {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      <EnrollStudentModal open={openEnroll} onClose={() => setOpenEnroll(false)} cls={cls} />
+    </div>
+  );
+}
+
+function EnrollStudentModal({ open, onClose, cls }) {
+  const qc = useQueryClient();
+  const [student, setStudent] = useState(null);
+  const [grantAccess, setGrantAccess] = useState(true);
+  const now = new Date();
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(now.getFullYear());
+  const isSubscription = cls.type === 'subscription';
+  const publishedMonths = [...(cls.months || [])]
+    .filter(m => m.isPublished)
+    .sort((a, b) => (a.year - b.year) || (a.month - b.month));
+
+  const reset = () => { setStudent(null); setGrantAccess(true); setMonth(now.getMonth() + 1); setYear(now.getFullYear()); };
+
+  const enroll = useMutation({
+    mutationFn: (body) => api.post('/enrollments/manual', body),
+    onSuccess: ({ data }) => {
+      toast.success(data.alreadyEnrolled ? 'Student was already enrolled — access updated' : 'Student enrolled');
+      qc.invalidateQueries({ queryKey: ['t-class-enrollments', cls._id] });
+      qc.invalidateQueries({ queryKey: ['t-classes'] });
+      reset();
+      onClose();
+    },
+    onError: (e) => toast.error(e.response?.data?.message || 'Failed to enroll student'),
+  });
+
+  const submit = () => {
+    if (!student) return;
+    const body = { studentId: student._id, classId: cls._id, grantAccess };
+    if (grantAccess && isSubscription) {
+      body.month = Number(month);
+      body.year = Number(year);
+    }
+    enroll.mutate(body);
+  };
+
+  return (
+    <Modal open={open} onClose={() => { reset(); onClose(); }} title={`Enroll Student — ${cls.title}`}>
+      <div className="space-y-4">
+        <div>
+          <label className="label">Student</label>
+          <StudentPicker value={student} onChange={setStudent} />
+        </div>
+
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" className="rounded" checked={grantAccess} onChange={e => setGrantAccess(e.target.checked)} />
+          Also grant access (skip payment) — otherwise the student is enrolled but still needs to pay to unlock content
+        </label>
+
+        {grantAccess && isSubscription && (
+          <div>
+            <label className="label">Month to grant</label>
+            {publishedMonths.length === 0 ? (
+              <p className="text-xs text-rose-600">This class has no published months yet.</p>
+            ) : (
+              <select className="input" value={`${year}-${month}`} onChange={e => {
+                const [y, m] = e.target.value.split('-').map(Number);
+                setYear(y); setMonth(m);
+              }}>
+                {publishedMonths.map(m => (
+                  <option key={`${m.year}-${m.month}`} value={`${m.year}-${m.month}`}>
+                    {monthName(m.month)} {m.year}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 pt-2">
+          <button onClick={() => { reset(); onClose(); }} className="btn-outline">Cancel</button>
+          <button
+            onClick={submit}
+            disabled={!student || enroll.isPending || (grantAccess && isSubscription && publishedMonths.length === 0)}
+            className="btn-gold"
+          >
+            {enroll.isPending ? 'Enrolling…' : 'Enroll Student'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function StudentPicker({ value, onChange }) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+
+  const { data, isFetching } = useQuery({
+    queryKey: ['t-student-search', query],
+    queryFn: async () => (await api.get(`/students?search=${encodeURIComponent(query)}&limit=8`)).data,
+    enabled: query.trim().length >= 2,
+    keepPreviousData: true,
+  });
+
+  if (value) {
+    return (
+      <div className="flex items-center justify-between p-2 border border-midnight-200 rounded-lg">
+        <div>
+          <p className="font-medium text-sm">{value.firstName} {value.lastName}</p>
+          <p className="text-xs font-mono text-midnight-500">{value.studentId} · {value.email}</p>
+        </div>
+        <button onClick={() => onChange(null)} className="btn-outline py-1 px-2 text-xs">Change</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative">
+      <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-midnight-400" />
+      <input
+        className="input pl-9"
+        placeholder="Search by name, student ID, or email…"
+        value={query}
+        onChange={e => { setQuery(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+      />
+      {open && query.trim().length >= 2 && (
+        <div className="absolute z-10 mt-1 w-full bg-white border border-midnight-200 rounded-lg shadow-luxury max-h-60 overflow-y-auto">
+          {isFetching ? (
+            <p className="p-3 text-sm text-midnight-500">Searching…</p>
+          ) : data?.students.length === 0 ? (
+            <p className="p-3 text-sm text-midnight-500">No students found.</p>
+          ) : (
+            data.students.map(s => (
+              <button
+                key={s._id}
+                onClick={() => { onChange(s); setOpen(false); setQuery(''); }}
+                className="w-full text-left p-2 hover:bg-midnight-50 text-sm"
+              >
+                <p className="font-medium">{s.firstName} {s.lastName}</p>
+                <p className="text-xs font-mono text-midnight-500">{s.studentId} · {s.email}</p>
+              </button>
+            ))
+          )}
         </div>
       )}
     </div>
